@@ -24,3 +24,6 @@ logs
 !.env.example
 .claude.*
 .claude
+
+specs
+specs.*
