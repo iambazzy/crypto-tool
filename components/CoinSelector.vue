@@ -97,6 +97,7 @@ const highlightedIndex = ref(0)
 const coins = ref<CoinListItem[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
+const isSelectingCoin = ref(false)
 
 let debounceTimer: NodeJS.Timeout | null = null
 
@@ -112,12 +113,18 @@ const filteredCoins = computed(() => {
 
 watch(searchQuery, (newValue) => {
   if (newValue.length > 0) {
-    showDropdown.value = true
-    highlightedIndex.value = 0
+    // Don't reopen dropdown if we're in the middle of selecting a coin
+    if (!isSelectingCoin.value) {
+      showDropdown.value = true
+      highlightedIndex.value = 0
 
-    if (coins.value.length === 0) {
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(fetchCoins, 300)
+      if (coins.value.length === 0) {
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(fetchCoins, 300)
+      }
+    } else {
+      // Reset the flag after selection is complete
+      isSelectingCoin.value = false
     }
   } else {
     showDropdown.value = false
@@ -141,6 +148,7 @@ async function fetchCoins() {
 }
 
 function selectCoin(coin: CoinListItem) {
+  isSelectingCoin.value = true
   emit('select', coin)
   searchQuery.value = `${coin.name} (${coin.symbol})`
   showDropdown.value = false
