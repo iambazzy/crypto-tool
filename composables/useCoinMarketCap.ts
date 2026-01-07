@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import type { CoinListItem, MarketCapCalculation } from '~/types/coinmarketcap'
+import type { CoinListItem, MarketCapCalculation, PriceCalculation, CalculationResult } from '~/types/coinmarketcap'
 
 interface CoinDetails {
   id: number
@@ -106,13 +106,59 @@ export function useMarketCapCalculation() {
       const result = await $fetch<MarketCapCalculation>('/api/market-cap', {
         params: {
           slug: coinSlug,
-          price: targetPrice
+          price: targetPrice,
+          mode: 'price'
         }
       })
       state.value.data = result
       return result
     } catch (e: any) {
       state.value.error = e.message || 'Failed to calculate market cap'
+      throw e
+    } finally {
+      state.value.loading = false
+    }
+  }
+
+  return {
+    ...state.value,
+    calculate
+  }
+}
+
+export function usePriceCalculation() {
+  const state = ref<ApiState<PriceCalculation>>({
+    data: null,
+    loading: false,
+    error: null
+  })
+
+  async function calculate(coinSlug: string, targetMarketCap: number) {
+    if (!coinSlug || !targetMarketCap) {
+      state.value.error = 'Coin slug and target market cap are required'
+      return
+    }
+
+    if (targetMarketCap <= 0) {
+      state.value.error = 'Target market cap must be greater than zero'
+      return
+    }
+
+    state.value.loading = true
+    state.value.error = null
+
+    try {
+      const result = await $fetch<PriceCalculation>('/api/market-cap', {
+        params: {
+          slug: coinSlug,
+          marketCap: targetMarketCap,
+          mode: 'marketCap'
+        }
+      })
+      state.value.data = result
+      return result
+    } catch (e: any) {
+      state.value.error = e.message || 'Failed to calculate price'
       throw e
     } finally {
       state.value.loading = false

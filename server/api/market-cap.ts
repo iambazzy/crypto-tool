@@ -1,4 +1,4 @@
-import type { CoinData, MarketCapCalculation } from '~/types/coinmarketcap'
+import type { CoinData, MarketCapCalculation, PriceCalculation, CalculationResult } from '~/types/coinmarketcap'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
 
   const coinSlug = query.slug as string
-  const targetPrice = parseFloat(query.price as string)
+  const mode = (query.mode as string) || 'price'
 
   if (!apiKey) {
     throw createError({
@@ -15,17 +15,46 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (!coinSlug || !targetPrice) {
+  if (!coinSlug) {
     throw createError({
       statusCode: 400,
-      message: 'Coin slug and target price are required'
+      message: 'Coin slug is required'
     })
   }
 
-  if (targetPrice <= 0) {
+  // Validate based on mode
+  if (mode === 'price') {
+    const targetPrice = parseFloat(query.price as string)
+    if (!targetPrice) {
+      throw createError({
+        statusCode: 400,
+        message: 'Target price is required for price mode'
+      })
+    }
+    if (targetPrice <= 0) {
+      throw createError({
+        statusCode: 400,
+        message: 'Target price must be greater than zero'
+      })
+    }
+  } else if (mode === 'marketCap') {
+    const targetMarketCap = parseFloat(query.marketCap as string)
+    if (!targetMarketCap) {
+      throw createError({
+        statusCode: 400,
+        message: 'Target market cap is required for marketCap mode'
+      })
+    }
+    if (targetMarketCap <= 0) {
+      throw createError({
+        statusCode: 400,
+        message: 'Target market cap must be greater than zero'
+      })
+    }
+  } else {
     throw createError({
       statusCode: 400,
-      message: 'Target price must be greater than zero'
+      message: 'Invalid mode. Must be "price" or "marketCap"'
     })
   }
 
@@ -53,21 +82,44 @@ export default defineEventHandler(async (event) => {
     const currentPrice = coinData.quote.USD.price
     const circulatingSupply = coinData.circulating_supply
     const currentMarketCap = coinData.quote.USD.market_cap
-    const requiredMarketCap = targetPrice * circulatingSupply
-    const multiplier = requiredMarketCap / currentMarketCap
 
-    const result: MarketCapCalculation = {
-      coinName: coinData.name,
-      coinSymbol: coinData.symbol,
-      currentPrice: parseFloat(currentPrice.toFixed(2)),
-      circulatingSupply,
-      currentMarketCap: parseFloat(currentMarketCap.toFixed(2)),
-      targetPrice,
-      requiredMarketCap: parseFloat(requiredMarketCap.toFixed(2)),
-      multiplier: parseFloat(multiplier.toFixed(2))
+    if (mode === 'price') {
+      const targetPrice = parseFloat(query.price as string)
+      const requiredMarketCap = targetPrice * circulatingSupply
+      const multiplier = requiredMarketCap / currentMarketCap
+
+      const result: CalculationResult = {
+        mode: 'price',
+        coinName: coinData.name,
+        coinSymbol: coinData.symbol,
+        currentPrice: parseFloat(currentPrice.toFixed(2)),
+        circulatingSupply,
+        currentMarketCap: parseFloat(currentMarketCap.toFixed(2)),
+        targetPrice,
+        requiredMarketCap: parseFloat(requiredMarketCap.toFixed(2)),
+        multiplier: parseFloat(multiplier.toFixed(2))
+      }
+
+      return result
+    } else {
+      const targetMarketCap = parseFloat(query.marketCap as string)
+      const resultingPrice = targetMarketCap / circulatingSupply
+      const multiplier = resultingPrice / currentPrice
+
+      const result: CalculationResult = {
+        mode: 'marketCap',
+        coinName: coinData.name,
+        coinSymbol: coinData.symbol,
+        currentPrice: parseFloat(currentPrice.toFixed(2)),
+        circulatingSupply,
+        currentMarketCap: parseFloat(currentMarketCap.toFixed(2)),
+        targetMarketCap: parseFloat(targetMarketCap.toFixed(2)),
+        resultingPrice: parseFloat(resultingPrice.toFixed(2)),
+        multiplier: parseFloat(multiplier.toFixed(2))
+      }
+
+      return result
     }
-
-    return result
   } catch (error: any) {
     console.error('Market cap calculation error:', error)
     throw createError({

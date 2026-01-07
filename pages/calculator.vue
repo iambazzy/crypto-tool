@@ -70,7 +70,7 @@
           </div>
         </transition>
 
-        <!-- Step 3: Target Price Input (appears after coin summary) -->
+        <!-- Mode Toggle (appears after coin summary) -->
         <transition
           enter-active-class="transition ease-out duration-300"
           enter-from-class="transform opacity-0 translate-y-4"
@@ -79,8 +79,24 @@
           leave-from-class="transform opacity-100 translate-y-0"
           leave-to-class="transform opacity-0 translate-y-4"
         >
+          <div v-if="coinDetails" class="flex justify-center">
+            <CalculationModeToggle v-model="calculationMode" />
+          </div>
+        </transition>
+
+        <!-- Step 3: Input (appears after mode selection) -->
+        <transition
+          mode="out-in"
+          enter-active-class="transition ease-out duration-300"
+          enter-from-class="transform opacity-0 translate-y-4"
+          enter-to-class="transform opacity-100 translate-y-0"
+          leave-active-class="transition ease-in duration-200"
+          leave-from-class="transform opacity-100 translate-y-0"
+          leave-to-class="transform opacity-0 translate-y-4"
+        >
           <div v-if="coinDetails">
-            <TargetPriceInput v-model="targetPrice" />
+            <TargetPriceInput v-if="calculationMode === 'price'" v-model="targetPrice" />
+            <TargetMarketCapInput v-else v-model="targetMarketCap" />
           </div>
         </transition>
 
@@ -90,10 +106,10 @@
           enter-from-class="transform opacity-0 translate-y-4"
           enter-to-class="transform opacity-100 translate-y-0"
         >
-          <div v-if="coinDetails && targetPrice" class="flex justify-center">
+          <div v-if="canCalculate" class="flex justify-center">
             <button
               @click="calculateMarketCap"
-              :disabled="calculating || !targetPrice"
+              :disabled="calculating || !canCalculate"
               class="px-8 py-3 bg-accent-500 hover:bg-accent-600 disabled:bg-primary-300 dark:disabled:bg-primary-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2"
             >
               <span v-if="calculating" class="flex items-center space-x-2">
@@ -101,9 +117,9 @@
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span>Calculating...</span>
+                <span>{{ buttonText }}</span>
               </span>
-              <span v-else>Calculate Market Cap</span>
+              <span v-else>{{ buttonText }}</span>
             </button>
           </div>
         </transition>
@@ -149,20 +165,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { CoinListItem, MarketCapCalculation } from '~/types/coinmarketcap'
+import { ref, computed, watch } from 'vue'
+import type { CoinListItem, CalculationResult } from '~/types/coinmarketcap'
 
 const { name } = useBrand()
 
 useHead({
-  title: `Calculator - ${name}`,
+  title: `Market Cap Calculator - ${name}`,
   meta: [
     {
       name: 'description',
-      content: 'Calculate cryptocurrency market capitalization scenarios with real-time data. Professional crypto analysis tool by kointools.'
+      content: 'Calculate crypto market cap from target price or price from target market cap. Professional bidirectional analysis tool.'
     }
   ]
 })
+
+type CalculationMode = 'price' | 'marketCap'
 
 const selectedCoin = ref<CoinListItem | null>(null)
 const coinDetails = ref<{
@@ -175,24 +193,49 @@ const coinDetails = ref<{
   volume24h: number
   percentChange24h: number
 } | null>(null)
+const calculationMode = ref<CalculationMode>('price')
 const targetPrice = ref<number | null>(null)
-const results = ref<MarketCapCalculation | null>(null)
+const targetMarketCap = ref<number | null>(null)
+const results = ref<CalculationResult | null>(null)
 const calculating = ref(false)
 const loadingDetails = ref(false)
 const error = ref<string | null>(null)
 
+// Reset inputs when mode changes
+watch(calculationMode, () => {
+  targetPrice.value = null
+  targetMarketCap.value = null
+  results.value = null
+  error.value = null
+})
+
 const currentStep = computed(() => {
   if (results.value) return 3
-  if (coinDetails.value && targetPrice.value) return 3
+  if (coinDetails.value && (targetPrice.value || targetMarketCap.value)) return 3
   if (coinDetails.value) return 2
   if (selectedCoin.value) return 2
   return 1
+})
+
+const buttonText = computed(() => {
+  if (calculating.value) return 'Calculating...'
+  return calculationMode.value === 'price' ? 'Calculate Market Cap' : 'Calculate Price'
+})
+
+const canCalculate = computed(() => {
+  if (!coinDetails.value) return false
+  if (calculationMode.value === 'price') {
+    return targetPrice.value !== null && targetPrice.value > 0
+  } else {
+    return targetMarketCap.value !== null && targetMarketCap.value > 0
+  }
 })
 
 async function handleCoinSelect(coin: CoinListItem) {
   selectedCoin.value = coin
   coinDetails.value = null
   targetPrice.value = null
+  targetMarketCap.value = null
   results.value = null
   error.value = null
   loadingDetails.value = true
@@ -219,24 +262,37 @@ async function handleCoinSelect(coin: CoinListItem) {
 }
 
 async function calculateMarketCap() {
-  if (!selectedCoin.value || !targetPrice.value) return
+  if (!selectedCoin.value) return
 
   calculating.value = true
   error.value = null
   results.value = null
 
   try {
-    const result = await $fetch<MarketCapCalculation>('/api/market-cap', {
-      params: {
-        slug: selectedCoin.value.slug,
-        price: targetPrice.value
-      }
-    })
-
-    results.value = result
+    if (calculationMode.value === 'price') {
+      if (!targetPrice.value) return
+      const result = await $fetch<CalculationResult>('/api/market-cap', {
+        params: {
+          slug: selectedCoin.value.slug,
+          price: targetPrice.value,
+          mode: 'price'
+        }
+      })
+      results.value = result
+    } else {
+      if (!targetMarketCap.value) return
+      const result = await $fetch<CalculationResult>('/api/market-cap', {
+        params: {
+          slug: selectedCoin.value.slug,
+          marketCap: targetMarketCap.value,
+          mode: 'marketCap'
+        }
+      })
+      results.value = result
+    }
   } catch (e: any) {
-    error.value = e.data?.message || 'Failed to calculate market cap. Please try again.'
-    console.error('Error calculating market cap:', e)
+    error.value = e.data?.message || 'Failed to calculate. Please try again.'
+    console.error('Error calculating:', e)
   } finally {
     calculating.value = false
   }

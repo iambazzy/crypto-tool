@@ -34,3 +34,18 @@ export interface MarketCapCalculation {
   requiredMarketCap: number
   multiplier: number
 }
+
+export interface PriceCalculation {
+  coinName: string
+  coinSymbol: string
+  currentPrice: number
+  circulatingSupply: number
+  currentMarketCap: number
+  targetMarketCap: number
+  resultingPrice: number
+  multiplier: number
+}
+
+export type CalculationResult =
+  | { mode: 'price' } & MarketCapCalculation
+  | { mode: 'marketCap' } & PriceCalculation

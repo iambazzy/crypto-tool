@@ -1,26 +1,35 @@
 <template>
   <div class="bg-gradient-to-br from-primary-50 to-primary-100 dark:from-primary-800 dark:to-primary-900 border border-primary-200 dark:border-primary-700 rounded-lg shadow-lg p-8">
+    <!-- Target Scenario Section -->
     <div class="mb-6">
       <h3 class="text-sm font-semibold text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-2">
         Target Scenario
       </h3>
-      <p class="text-3xl font-bold text-primary-900 dark:text-primary-50">
+      <p v-if="results.mode === 'price'" class="text-3xl font-bold text-primary-900 dark:text-primary-50">
         {{ formatCurrency(results.targetPrice) }} <span class="text-lg text-primary-500 dark:text-primary-400">per {{ results.coinSymbol }}</span>
       </p>
+      <p v-else class="text-3xl font-bold text-primary-900 dark:text-primary-50">
+        {{ formatMarketCap(results.targetMarketCap) }} <span class="text-lg text-primary-500 dark:text-primary-400">market cap</span>
+      </p>
     </div>
 
+    <!-- Main Result Section -->
     <div class="border-t border-primary-200 dark:border-primary-700 pt-6 mb-6">
       <h3 class="text-sm font-semibold text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-2">
-        Required Market Cap
+        {{ results.mode === 'price' ? 'Required Market Cap' : 'Resulting Price' }}
       </h3>
-      <p class="text-5xl font-bold text-primary-900 dark:text-primary-50 mb-2">
+      <p v-if="results.mode === 'price'" class="text-5xl font-bold text-primary-900 dark:text-primary-50 mb-2">
         {{ formatMarketCap(results.requiredMarketCap) }}
       </p>
+      <p v-else class="text-5xl font-bold text-primary-900 dark:text-primary-50 mb-2">
+        {{ formatCurrency(results.resultingPrice) }}
+      </p>
       <p class="text-sm text-primary-600 dark:text-primary-300">
-        Market capitalization needed
+        {{ results.mode === 'price' ? 'Market capitalization needed' : 'Price per token at target market cap' }}
       </p>
     </div>
 
+    <!-- Growth Required Section -->
     <div class="border-t border-primary-200 dark:border-primary-700 pt-6 mb-6">
       <h3 class="text-sm font-semibold text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-2">
         Growth Required
@@ -40,24 +49,40 @@
         </span>
       </div>
       <p class="text-sm text-primary-600 dark:text-primary-300 mt-3">
-        {{ getMultiplierDescription(results.multiplier) }}
+        {{ getMultiplierDescription(results.multiplier, results.mode) }}
       </p>
     </div>
 
-    <div class="border-t border-primary-200 dark:border-primary-700 pt-6">
+    <!-- Comparison Section -->
+    <div class="border-t border-primary-200 dark:border-primary-700 pt-6 mb-6">
       <h3 class="text-sm font-semibold text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-4">
         Comparison
       </h3>
       <div class="grid grid-cols-2 gap-4">
-        <div class="bg-white/50 dark:bg-primary-800/50 rounded-lg p-4">
+        <div v-if="results.mode === 'price'" class="bg-white/50 dark:bg-primary-800/50 rounded-lg p-4">
           <p class="text-xs text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-1">Current</p>
           <p class="text-xl font-bold text-primary-900 dark:text-primary-50">{{ formatMarketCap(results.currentMarketCap) }}</p>
         </div>
-        <div class="bg-white/50 dark:bg-primary-800/50 rounded-lg p-4">
+        <div v-if="results.mode === 'price'" class="bg-white/50 dark:bg-primary-800/50 rounded-lg p-4">
           <p class="text-xs text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-1">Required</p>
           <p class="text-xl font-bold text-primary-900 dark:text-primary-50">{{ formatMarketCap(results.requiredMarketCap) }}</p>
         </div>
+        <div v-if="results.mode === 'marketCap'" class="bg-white/50 dark:bg-primary-800/50 rounded-lg p-4">
+          <p class="text-xs text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-1">Current Price</p>
+          <p class="text-xl font-bold text-primary-900 dark:text-primary-50">{{ formatCurrency(results.currentPrice) }}</p>
+        </div>
+        <div v-if="results.mode === 'marketCap'" class="bg-white/50 dark:bg-primary-800/50 rounded-lg p-4">
+          <p class="text-xs text-primary-500 dark:text-primary-400 uppercase tracking-wider mb-1">Resulting Price</p>
+          <p class="text-xl font-bold text-primary-900 dark:text-primary-50">{{ formatCurrency(results.resultingPrice) }}</p>
+        </div>
       </div>
+    </div>
+
+    <!-- Assumption Notice -->
+    <div class="border-t border-primary-200 dark:border-primary-700 pt-6 mb-6">
+      <p class="text-xs text-primary-500 dark:text-primary-400 italic">
+        * Assumes constant circulating supply of {{ formatNumber(results.circulatingSupply) }} {{ results.coinSymbol }}
+      </p>
     </div>
 
     <!-- Export & Share Section -->
@@ -77,10 +102,10 @@
 </template>
 
 <script setup lang="ts">
-import type { MarketCapCalculation } from '~/types/coinmarketcap'
+import type { CalculationResult } from '~/types/coinmarketcap'
 
 interface Props {
-  results: MarketCapCalculation
+  results: CalculationResult
 }
 
 defineProps<Props>()
@@ -131,10 +156,19 @@ function getMultiplierLabel(multiplier: number): string {
   return 'Highly Ambitious'
 }
 
-function getMultiplierDescription(multiplier: number): string {
-  if (multiplier < 2) return 'This represents modest growth from current levels and is within the realm of short to medium-term market movements.'
-  if (multiplier < 5) return 'This level of growth is achievable for established cryptocurrencies over market cycles, though it requires favorable market conditions.'
-  if (multiplier < 10) return 'This is an ambitious target requiring significant adoption, favorable market conditions, and sustained growth over time.'
-  return 'This is a highly ambitious target that would require exceptional circumstances, massive adoption, or fundamental market shifts.'
+function getMultiplierDescription(multiplier: number, mode: 'price' | 'marketCap'): string {
+  const metric = mode === 'price' ? 'market cap growth' : 'price increase'
+
+  if (multiplier < 2) return `This represents modest ${metric} from current levels and is within the realm of short to medium-term market movements.`
+  if (multiplier < 5) return `This level of ${metric} is achievable for established cryptocurrencies over market cycles, though it requires favorable market conditions.`
+  if (multiplier < 10) return `This is an ambitious target requiring significant adoption, favorable market conditions, and sustained growth over time.`
+  return `This is a highly ambitious target that would require exceptional circumstances, massive adoption, or fundamental market shifts.`
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(value)
 }
 </script>
